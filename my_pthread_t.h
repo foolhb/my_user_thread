@@ -16,20 +16,24 @@
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/ucontext.h>
+#include <ucontext.h>
 #include <signal.h>
 
 typedef enum thread_status {
     READY = 1,
-    BLOCKING = 2,
-    FINISHED = 3,
+    RUNNING = 2,
+    BLOCKED = 3,
+    FINISHED = 4,
 };
 
 typedef struct _thread_control_block {
     uint thread_id;
     ucontext_t thread_context;
+    int is_main;
     enum thread_status status;
-    void **retval
+    void *retval;
+    struct _thread_control_block *next;
+
 } thread_control_block, my_pthread_t;
 
 typedef struct _thread_queue_node {
@@ -38,7 +42,8 @@ typedef struct _thread_queue_node {
 } thread_queue_node;
 
 typedef struct _thread_queue {
-    thread_queue_node *head;
+    thread_control_block *head;
+    thread_control_block *rear;
     int size;
 } thread_queue;
 
@@ -52,9 +57,10 @@ typedef struct my_pthread_mutex_t {
 
 /* define your data structures here: */
 // Feel free to add your own auxiliary data structures
-typedef struct thread_scheduler {
-
-};
+typedef struct _multi_queue {
+    thread_queue *ready_queue;
+    thread_queue *finished_queue;
+} multi_queue;
 
 /* Function Declarations: */
 
