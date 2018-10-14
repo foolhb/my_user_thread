@@ -16,7 +16,7 @@ static int initialized = 0;
 static int thread_counter = 0;
 
 thread_control_block *all_threads[MAX_THREAD_NUMBER];
-multi_queue queues;
+multi_queue *queues;
 ucontext_t return_context;
 thread_control_block *current_running_thread = NULL;
 struct itimerval quantum;
@@ -58,7 +58,7 @@ void schedule(int signum) {
     printf("Invoking scheduler now \n");
     sigprocmask(SIG_SETMASK, &signal_mask, NULL);
     thread_control_block *last_running_thread = current_running_thread;
-    thread_control_block *next_thread_to_swap_in = pop_node(queues.ready_queue);
+    thread_control_block *next_thread_to_swap_in = pop_node(queues->ready_queue);
     if (next_thread_to_swap_in == NULL) {
         printf("This is the last thread hasn't finished yet \n");
     } else {
@@ -66,9 +66,9 @@ void schedule(int signum) {
     }
 
     if (last_running_thread->status == TERMINATED) {
-        insert_node(queues.finished_queue, current_running_thread);
+        insert_node(queues->finished_queue, current_running_thread);
     } else {
-        insert_node(queues.ready_queue, last_running_thread);
+        insert_node(queues->ready_queue, last_running_thread);
     }
     printf("thread %d is executing \n", current_running_thread->thread_id);
     setitimer(ITIMER_VIRTUAL, &quantum, NULL);
@@ -104,8 +104,9 @@ int environment_initialize() {
     sigemptyset(&signal_mask);
     sigaddset(&signal_mask, SIGVTALRM);
 
-    queues.ready_queue = (thread_queue *) malloc(sizeof(thread_queue));
-    queues.finished_queue = (thread_queue *) malloc(sizeof(thread_queue));
+    queues = (multi_queue*)malloc(sizeof(multi_queue));
+    queues->ready_queue = (thread_queue *) malloc(sizeof(thread_queue));
+    queues->finished_queue = (thread_queue *) malloc(sizeof(thread_queue));
 
     getcontext(&return_context);
     return_context.uc_stack.ss_sp = (char *) malloc(STACKSIZE);
@@ -162,7 +163,7 @@ int my_pthread_create(my_pthread_t *thread, pthread_attr_t *attr, void *(*functi
     tcb->thread_context.uc_link = &return_context;
     makecontext(&(tcb->thread_context), thread_task_wrapper, 2, function, arg);
     sigemptyset(&tcb->thread_context.uc_sigmask);
-    insert_node(queues.ready_queue, tcb);
+    insert_node(queues->ready_queue, tcb);
     all_threads[*thread] = tcb;
     sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
     return 0;
