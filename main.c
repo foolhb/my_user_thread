@@ -4,12 +4,19 @@
 
 #include "my_pthread_t.h"
 
+void test(){
+    printf("Do triger a signal \n");
+}
 int print1() {
+    int i = 0;
+    for(i=0;i<10000000;i++);
     printf("1111111111! \n");
     return 1;
 }
 
 int print2() {
+    int i = 0;
+    for(i=0;i<10000000;i++);
     printf("2222222222! \n");
     return 2;
 }
@@ -21,8 +28,10 @@ void main() {
     my_pthread_create(thread2, NULL, print2, NULL);
     void **status;
     my_pthread_join(*thread1, status);
+    printf("Thread1 join is done! \n");
     my_pthread_join(*thread2, status);
-    printf("I am down! \n");
+    printf("Thread2 join is done! \n");
+    printf("I am done! \n");
     return;
 
 }

@@ -26,15 +26,17 @@ typedef enum thread_status {
     FINISHED = 4,
 };
 
+typedef unsigned long int my_pthread_t;
+
 typedef struct _thread_control_block {
-    uint thread_id;
+    my_pthread_t thread_id;
     ucontext_t thread_context;
     int is_main;
     enum thread_status status;
     void *retval;
     struct _thread_control_block *next;
 
-} thread_control_block, my_pthread_t;
+} thread_control_block;
 
 typedef struct _thread_queue_node {
     struct thread_queue_node *next;

@@ -10,11 +10,13 @@
 #include "my_pthread_t.h"
 
 #define STACKSIZE 5*1024
-#define TIMEQUANTUM 1000
+#define TIMEQUANTUM 25
+#define MAX_THREAD_NUMBER 100
 
 static int initialized = 0;
 static int thread_counter = 0;
 
+thread_control_block *all_threads[MAX_THREAD_NUMBER];
 multi_queue queues;
 ucontext_t return_context;
 thread_control_block *current_running_thread = NULL;
@@ -40,7 +42,7 @@ void insert_node(thread_queue *queue, thread_control_block *thread) {
 thread_control_block *pop_node(thread_queue *queue) {
     if (queue->size == 0) {
         printf("Error! No thread in ready queue! \n");
-        exit(0);
+        return NULL;
     }
     queue->size--;
     thread_control_block *thread = queue->head;
@@ -56,16 +58,24 @@ thread_control_block *pop_node(thread_queue *queue) {
 void schedule(int signum) {
     printf("Invoking scheduler now \n");
     sigprocmask(SIG_SETMASK, &signal_mask, NULL);
-    thread_control_block *thread_to_swap_in = pop_node(queues.ready_queue);
-//    if (current_running_thread->status == FINISHED) {
-//        insert_node(queues.finished_queue, current_running_thread);
-//        setcontext(&thread_to_swap_in->thread_context);
-//    }
-    insert_node(queues.ready_queue, current_running_thread);
-    printf("thread %d is executing \n", thread_to_swap_in->thread_id);
+    thread_control_block *last_running_thread = current_running_thread;
+    thread_control_block *next_thread_to_swap_in = pop_node(queues.ready_queue);
+    if (next_thread_to_swap_in == NULL) {
+        printf("This is the last thread hasn't finished yet \n");
+    } else {
+        current_running_thread = next_thread_to_swap_in;
+    }
 
-    swapcontext(&(current_running_thread->thread_context), &(thread_to_swap_in->thread_context));
+    if (last_running_thread->status == FINISHED) {
+        insert_node(queues.finished_queue, current_running_thread);
+    } else {
+        insert_node(queues.ready_queue, last_running_thread);
+    }
+    printf("thread %d is executing \n", current_running_thread->thread_id);
+    setitimer(ITIMER_VIRTUAL, &quantum, NULL);
     sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
+    swapcontext(&(last_running_thread->thread_context), &(current_running_thread->thread_context));
+
 }
 
 /**
@@ -137,51 +147,56 @@ int my_pthread_create(my_pthread_t *thread, pthread_attr_t *attr, void *(*functi
         initialized = 1;
         printf("Environment initialized \n");
     }
-    if (thread == NULL) {
-        thread = (thread_control_block *) malloc(sizeof(thread_control_block));
-    }
+    thread_control_block *tcb = NULL;
+    tcb = (thread_control_block *) malloc(sizeof(thread_control_block));
+
     sigprocmask(SIG_SETMASK, &signal_mask, NULL);
-    thread->next = NULL;
-    thread->thread_id = get_thread_id();
-    thread->is_main = 0;
-    getcontext(&(thread->thread_context));
-    thread->thread_context.uc_stack.ss_sp = (char *) malloc(STACKSIZE);
-    thread->thread_context.uc_stack.ss_size = STACKSIZE;
-    thread->thread_context.uc_stack.ss_flags = 0;
-    thread->thread_context.uc_link = &return_context;
-    makecontext(&(thread->thread_context), thread_task_wrapper, 2, function, arg);
-    insert_node(queues.ready_queue, thread);
+    tcb->next = NULL;
+    tcb->thread_id = get_thread_id();
+    *thread = tcb->thread_id;
+    tcb->is_main = 0;
+    tcb->status = READY;
+    getcontext(&(tcb->thread_context));
+    tcb->thread_context.uc_stack.ss_sp = (char *) malloc(STACKSIZE);
+    tcb->thread_context.uc_stack.ss_size = STACKSIZE;
+    tcb->thread_context.uc_stack.ss_flags = 0;
+    tcb->thread_context.uc_link = &return_context;
+    makecontext(&(tcb->thread_context), thread_task_wrapper, 2, function, arg);
+    sigemptyset(&tcb->thread_context.uc_sigmask);
+    insert_node(queues.ready_queue, tcb);
+    all_threads[*thread] = tcb;
     sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
-//    raise(SIGVTALRM);
     return 0;
 }
 
 /* give CPU procession to other user level threads voluntarily */
 int my_pthread_yield() {
     //调用schedule
+    printf("thread %d yields \n", current_running_thread->thread_id);
+    raise(SIGVTALRM);
     return 0;
 };
 
 /* terminate a thread */
 void my_pthread_exit(void *value_ptr) {
     current_running_thread->retval = value_ptr;
-
 };
 
 /* wait for thread termination */
 int my_pthread_join(my_pthread_t thread, void **value_ptr) {
     //sigprocmask(SIG_BLOCK,&signal_mask,NULL);
-    printf("Thread %d is joined to thread %d \n", current_running_thread->thread_id, thread.thread_id);
+    thread_control_block *tempPtr = all_threads[thread];
+    printf("Thread %d is joined to thread %d \n", current_running_thread->thread_id, tempPtr->thread_id);
     while (1) {
-        thread_control_block *tempPtr = queues.finished_queue->head;
-        while (tempPtr != NULL) {
-            if (tempPtr->thread_id == thread.thread_id) {
-                return 1;
-            }
+        if (tempPtr->status == FINISHED) {
+            printf("Joined thread is finished! \n");
+            value_ptr = tempPtr->retval;
+            return 1;
         }
+        my_pthread_yield();
     }
     sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
-};
+}
 
 /* initial the mutex lock */
 int my_pthread_mutex_init(my_pthread_mutex_t *mutex, const pthread_mutexattr_t *mutexattr) {
