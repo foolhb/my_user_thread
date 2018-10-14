@@ -36,6 +36,10 @@
 //
 //}
 
+
+/*****************************************************************************************************************
+ * Case II
+ *****************************************************************************************************************/
 //#define DEFAULT_THREAD_NUM 2
 //
 ////#define VECTOR_SIZE 3000000
@@ -219,6 +223,9 @@ int main(int argc, char **argv) {
     // mutex init
     my_pthread_mutex_init(&mutex, NULL);
 
+    struct timespec start, end;
+    clock_gettime(CLOCK_REALTIME, &start);
+
     for (i = 0; i < thread_num; ++i)
         my_pthread_create(&thread[i], NULL, &parallel_calculate, &counter[i]);
 
@@ -226,9 +233,12 @@ int main(int argc, char **argv) {
         my_pthread_join(thread[i], NULL);
 
     printf("sum is: %d\n", sum);
+    clock_gettime(CLOCK_REALTIME, &end);
+    printf("running time: %lu micro-seconds\n", (end.tv_sec - start.tv_sec) * 1000 + (end.tv_nsec - start.tv_nsec) / 1000000);
 
     // mutex destroy
     my_pthread_mutex_destroy(&mutex);
+
 
     // feel free to verify your answer here:
     verify();
@@ -367,16 +377,22 @@ int main(int argc, char **argv) {
 //
 //    my_pthread_mutex_init(&mutex, NULL);
 //
+//    struct timespec start, end;
+//    clock_gettime(CLOCK_REALTIME, &start);
+//
 //    for (i = 0; i < thread_num; ++i)
 //        my_pthread_create(&thread[i], NULL, &external_calculate, &counter[i]);
 //
-//    //signal(SIGABRT, sig_handler);
-//    //signal(SIGSEGV, sig_handler);
+//    signal(SIGABRT, sig_handler);
+//    signal(SIGSEGV, sig_handler);
 //
 //    for (i = 0; i < thread_num; ++i)
 //        my_pthread_join(thread[i], NULL);
 //
 //    printf("sum is: %d\n", sum);
+//
+//    clock_gettime(CLOCK_REALTIME, &end);
+//    printf("running time: %lu micro-seconds\n", (end.tv_sec - start.tv_sec) * 1000 + (end.tv_nsec - start.tv_nsec) / 1000000);
 //
 //    my_pthread_mutex_destroy(&mutex);
 //
