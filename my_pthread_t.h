@@ -27,7 +27,8 @@ typedef enum thread_status {
     READY = 1,
     RUNNING = 2,
     BLOCKED = 3,
-    TERMINATED = 4,
+    WAITING = 4,
+    TERMINATED = 5,
 };
 
 typedef unsigned long int my_pthread_t;
@@ -39,6 +40,7 @@ typedef struct _thread_control_block {
     enum thread_status status;
     int priority;
     void *retval;
+    struct _thread_control_block *joined_by;
     struct _thread_control_block *next;
 
 } thread_control_block;
