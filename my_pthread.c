@@ -11,15 +11,20 @@
 #define STACKSIZE 5*1024
 #define TIMEQUANTUM 25
 #define MAX_THREAD_NUMBER 100
+#define NUMBER_OF_QUEUE_LEVELS 3
 
 static int initialized = 0;
 static int thread_counter = 0;
 
 thread_control_block *all_threads[MAX_THREAD_NUMBER];
-multi_queue *queues;
+thread_queue *queues[NUMBER_OF_QUEUE_LEVELS];
+thread_queue *finished_queue;
+//multi_queue *queues;
 ucontext_t return_context;
 thread_control_block *current_running_thread = NULL;
-struct itimerval quantum;
+
+struct itimerval quantum[NUMBER_OF_QUEUE_LEVELS];
+//struct itimerval quantum_1;
 sigset_t signal_mask;
 
 /**
@@ -35,7 +40,7 @@ void insert_node(thread_queue *queue, thread_control_block *thread) {
         queue->rear->next = thread;
         queue->rear = thread;
     }
-    printf("thread %d put into queue\n", thread->thread_id);
+    //printf("thread %d put into queue\n", thread->thread_id);
 }
 
 thread_control_block *pop_node(thread_queue *queue) {
@@ -46,36 +51,54 @@ thread_control_block *pop_node(thread_queue *queue) {
     queue->size--;
     thread_control_block *thread = queue->head;
     queue->head = queue->head->next;
-    printf("thread %d is popped out\n", thread->thread_id);
+    int id = thread->thread_id;
+//    printf("thread %d is popped out\n", thread->thread_id);
     return thread;
+
 }
 
 /**
  * Part II: Scheduler
  */
+thread_queue *get_highest_nonempty_queue() {
+    thread_control_block *next_thread_to_swap_in = NULL;
+    if (queues[0]->size != 0) {
+        return queues[0];
+    } else if (queues[1]->size != 0) {
+        return queues[1];
+    } else if (queues[2]->size != 0) {
+        return queues[2];
+    }
+    return NULL;
+}
 
 void schedule(int signum) {
-    printf("Invoking scheduler now \n");
+//    printf("Invoking scheduler now \n");
     sigprocmask(SIG_SETMASK, &signal_mask, NULL);
     thread_control_block *last_running_thread = current_running_thread;
-    thread_control_block *next_thread_to_swap_in = pop_node(queues->ready_queue);
-    if (next_thread_to_swap_in == NULL) {
-        printf("This is the last thread hasn't finished yet \n");
+    thread_control_block *next_thread_to_swap_in = NULL;
+    thread_queue *current_queue = get_highest_nonempty_queue();
+    if (current_queue == NULL) {
+//        printf("This is the last thread hasn't finished yet \n");
+        return;
     } else {
-        current_running_thread = next_thread_to_swap_in;
+        current_running_thread = pop_node(current_queue);
     }
 
+    int new_priority = last_running_thread->priority + 1;
     if (last_running_thread->status == TERMINATED) {
-        insert_node(queues->finished_queue, current_running_thread);
+        insert_node(finished_queue, current_running_thread);
     } else {
-        insert_node(queues->ready_queue, last_running_thread);
+        insert_node(queues[new_priority], last_running_thread);
     }
-    printf("thread %d is executing \n", current_running_thread->thread_id);
-    setitimer(ITIMER_VIRTUAL, &quantum, NULL);
+//    printf("thread %d is executing \n", current_running_thread->thread_id);
+    if (current_running_thread->priority != 2) {
+        setitimer(ITIMER_VIRTUAL, &quantum[new_priority], NULL);
+    }
     sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
     swapcontext(&(last_running_thread->thread_context), &(current_running_thread->thread_context));
-
 }
+
 
 /**
  * Part III: helper function for task wrapping, environment initializing, etc.
@@ -104,11 +127,21 @@ int environment_initialize() {
     sigemptyset(&signal_mask);
     sigaddset(&signal_mask, SIGVTALRM);
 
-    queues = (multi_queue*)malloc(sizeof(multi_queue));
-    queues->ready_queue = (thread_queue *) malloc(sizeof(thread_queue));
-    queues->finished_queue = (thread_queue *) malloc(sizeof(thread_queue));
-    queues->ready_queue->size = 0;
-    queues->finished_queue->size = 0;
+//    queues = (multi_queue *) malloc(sizeof(multi_queue));
+//    queues->ready_queue_0 = (thread_queue *) malloc(sizeof(thread_queue));
+//    queues->ready_queue_1 = (thread_queue *) malloc(sizeof(thread_queue));
+//    queues->ready_queue_FCFS = (thread_queue *) malloc(sizeof(thread_queue));
+//    queues->finished_queue = (thread_queue *) malloc(sizeof(thread_queue));
+
+    int i = 0;
+    for (i = 0; i < NUMBER_OF_QUEUE_LEVELS; i++) {
+        queues[i] = (thread_queue *) malloc(sizeof(thread_queue));
+        queues[i]->head = NULL;
+        queues[i]->rear = NULL;
+        queues[i]->size = 0;
+        queues[i]->priority = i;
+    }
+    finished_queue = (thread_queue *) malloc(sizeof(thread_queue));
 
     getcontext(&return_context);
     return_context.uc_stack.ss_sp = (char *) malloc(STACKSIZE);
@@ -126,15 +159,28 @@ int environment_initialize() {
     main_function_thread->status = RUNNING;
     main_function_thread->is_main = 1;
     main_function_thread->thread_id = 0;
+    all_threads[main_function_thread->thread_id] = main_function_thread;
     current_running_thread = main_function_thread;
 
-    quantum.it_value.tv_sec = 0;
-    quantum.it_interval.tv_sec = 0;
-    quantum.it_value.tv_usec = TIMEQUANTUM;
-    quantum.it_interval.tv_usec = TIMEQUANTUM;
+//    quantum_0.it_value.tv_sec = 0;
+//    quantum_0.it_interval.tv_sec = 0;
+//    quantum_0.it_value.tv_usec = TIMEQUANTUM;
+//    quantum_0.it_interval.tv_usec = TIMEQUANTUM;
+//
+//    quantum_0.it_value.tv_sec = 0;
+//    quantum_0.it_interval.tv_sec = 0;
+//    quantum_0.it_value.tv_usec = 2 * TIMEQUANTUM;
+//    quantum_0.it_interval.tv_usec = 2 * TIMEQUANTUM;
+
+    for (i = 0; i < NUMBER_OF_QUEUE_LEVELS; i++) {
+        quantum[i].it_value.tv_sec = 0;
+        quantum[i].it_interval.tv_sec = 0;
+        quantum[i].it_value.tv_usec = TIMEQUANTUM * (i + 1);
+        quantum[i].it_interval.tv_usec = TIMEQUANTUM * (i + 1);
+    }
 
     signal(SIGVTALRM, schedule);
-    setitimer(ITIMER_VIRTUAL, &quantum, NULL);
+    //setitimer(ITIMER_VIRTUAL, &quantum[0], NULL);
     return 0;
 }
 
@@ -157,6 +203,7 @@ int my_pthread_create(my_pthread_t *thread, pthread_attr_t *attr, void *(*functi
     tcb->thread_id = get_thread_id();
     *thread = tcb->thread_id;
     tcb->is_main = 0;
+    tcb->priority = 0;
     tcb->status = READY;
     getcontext(&(tcb->thread_context));
     tcb->thread_context.uc_stack.ss_sp = (char *) malloc(STACKSIZE);
@@ -165,7 +212,7 @@ int my_pthread_create(my_pthread_t *thread, pthread_attr_t *attr, void *(*functi
     tcb->thread_context.uc_link = &return_context;
     makecontext(&(tcb->thread_context), thread_task_wrapper, 2, function, arg);
     sigemptyset(&tcb->thread_context.uc_sigmask);
-    insert_node(queues->ready_queue, tcb);
+    insert_node(queues[tcb->priority], tcb);
     all_threads[*thread] = tcb;
     sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
     return 0;

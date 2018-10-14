@@ -37,6 +37,7 @@ typedef struct _thread_control_block {
     ucontext_t thread_context;
     int is_main;
     enum thread_status status;
+    int priority;
     void *retval;
     struct _thread_control_block *next;
 
@@ -50,6 +51,8 @@ typedef struct _thread_queue_node {
 typedef struct _thread_queue {
     thread_control_block *head;
     thread_control_block *rear;
+    int priority;
+    struct itimerval quantum;
     int size;
 } thread_queue;
 
@@ -64,7 +67,9 @@ typedef struct my_pthread_mutex_t {
 /* define your data structures here: */
 // Feel free to add your own auxiliary data structures
 typedef struct _multi_queue {
-    thread_queue *ready_queue;
+    thread_queue *ready_queue_0;
+    thread_queue *ready_queue_1;
+    thread_queue *ready_queue_FCFS;
     thread_queue *finished_queue;
 } multi_queue;
 
