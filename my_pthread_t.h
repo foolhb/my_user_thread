@@ -23,7 +23,7 @@
 #include <malloc.h>
 #include <time.h>
 
-typedef enum thread_status {
+typedef enum thread_states {
     READY = 1,
     RUNNING = 2,
     BLOCKED = 3,
@@ -37,7 +37,7 @@ typedef struct _thread_control_block {
     my_pthread_t thread_id;
     ucontext_t thread_context;
     int is_main;
-    enum thread_status status;
+    enum thread_states states;
     int priority;
     void *retval;
     struct _thread_control_block *joined_by;
