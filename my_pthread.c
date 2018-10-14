@@ -6,7 +6,6 @@
 // username of iLab:
 // iLab Server:
 
-#include <sys/time.h>
 #include "my_pthread_t.h"
 
 #define STACKSIZE 5*1024
@@ -66,7 +65,7 @@ void schedule(int signum) {
         current_running_thread = next_thread_to_swap_in;
     }
 
-    if (last_running_thread->status == FINISHED) {
+    if (last_running_thread->status == TERMINATED) {
         insert_node(queues.finished_queue, current_running_thread);
     } else {
         insert_node(queues.ready_queue, last_running_thread);
@@ -91,7 +90,7 @@ void *thread_task_wrapper(void *(*function)(void *), void *arg) {
     signal(SIGVTALRM, schedule);
     current_running_thread->retval = function(arg);
     printf("return value(int) is: %d\n", current_running_thread->retval);
-    current_running_thread->status = FINISHED;
+    current_running_thread->status = TERMINATED;
 }
 
 void function_after_task_finished() {
@@ -180,41 +179,59 @@ int my_pthread_yield() {
 /* terminate a thread */
 void my_pthread_exit(void *value_ptr) {
     current_running_thread->retval = value_ptr;
+    current_running_thread->status = TERMINATED;
 };
 
 /* wait for thread termination */
 int my_pthread_join(my_pthread_t thread, void **value_ptr) {
-    //sigprocmask(SIG_BLOCK,&signal_mask,NULL);
     thread_control_block *tempPtr = all_threads[thread];
+    current_running_thread->status = BLOCKED;
     printf("Thread %d is joined to thread %d \n", current_running_thread->thread_id, tempPtr->thread_id);
     while (1) {
-        if (tempPtr->status == FINISHED) {
+        if (tempPtr->status == TERMINATED) {
             printf("Joined thread is finished! \n");
+            current_running_thread->status = RUNNING;
             value_ptr = tempPtr->retval;
             return 1;
         }
         my_pthread_yield();
     }
-    sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
 }
 
 /* initial the mutex lock */
 int my_pthread_mutex_init(my_pthread_mutex_t *mutex, const pthread_mutexattr_t *mutexattr) {
+    if (mutex == NULL) {
+        mutex = (my_pthread_mutex_t *) malloc(sizeof(my_pthread_mutex_t));
+    }
+    mutex->lock = 0;
+    mutex->lock_owner = NULL;
+    mutex->waiting_queue = NULL;
     return 0;
 };
 
 /* aquire the mutex lock */
 int my_pthread_mutex_lock(my_pthread_mutex_t *mutex) {
+    while (1) {
+        if ((__sync_lock_test_and_set(&mutex->lock, 1)) == 0) break;
+        my_pthread_yield();
+    }
+    mutex->lock_owner = current_running_thread;
     return 0;
 };
 
 /* release the mutex lock */
 int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex) {
+    mutex->lock = 0;
+    mutex->lock_owner = NULL;
     return 0;
 };
 
 /* destroy the mutex */
 int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex) {
+    if (mutex->lock == 1) {
+        printf("Error! Trying to destroyed an locked mutex!\n");
+        return -1;
+    }
     return 0;
 };
 

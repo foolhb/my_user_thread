@@ -18,12 +18,16 @@
 #include <stdlib.h>
 #include <ucontext.h>
 #include <signal.h>
+#include <string.h>
+#include <sys/time.h>
+#include <malloc.h>
+#include <time.h>
 
 typedef enum thread_status {
     READY = 1,
     RUNNING = 2,
     BLOCKED = 3,
-    FINISHED = 4,
+    TERMINATED = 4,
 };
 
 typedef unsigned long int my_pthread_t;
@@ -52,9 +56,9 @@ typedef struct _thread_queue {
 /* mutex struct definition */
 typedef struct my_pthread_mutex_t {
     /* add something here */
-    int flag;
-    thread_control_block *mutex_owner;
-    thread_queue_node waiting_queue;
+    int lock;
+    thread_control_block *lock_owner;
+    thread_control_block *waiting_queue;
 } my_pthread_mutex_t;
 
 /* define your data structures here: */
