@@ -107,6 +107,8 @@ int environment_initialize() {
     queues = (multi_queue*)malloc(sizeof(multi_queue));
     queues->ready_queue = (thread_queue *) malloc(sizeof(thread_queue));
     queues->finished_queue = (thread_queue *) malloc(sizeof(thread_queue));
+    queues->ready_queue->size = 0;
+    queues->finished_queue->size = 0;
 
     getcontext(&return_context);
     return_context.uc_stack.ss_sp = (char *) malloc(STACKSIZE);
