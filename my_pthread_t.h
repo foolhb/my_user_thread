@@ -1,10 +1,11 @@
-// File:	my_pthread_t.h
-// Author:	Yujie REN
-// Date:	09/23/2017
+// File:	my_pthread.h
+// Author:	Bo Han, Bo Zhang
+// Date:	10/01/2019
 
-// name:
-// username of iLab:
-// iLab Server: 
+// name:  Bo Han, Bo Zhang
+// username of iLab:bh398
+// iLab Server:ilab3
+
 #ifndef MY_PTHREAD_T_H
 #define MY_PTHREAD_T_H
 
@@ -39,6 +40,7 @@ typedef struct _thread_control_block {
     int is_main;
     enum thread_states states;
     int priority;
+    int temporary_priority;
     void *retval;
     struct _thread_control_block *joined_by;
     struct _thread_control_block *next;
@@ -59,7 +61,7 @@ typedef struct _thread_queue {
 } thread_queue;
 
 /* mutex struct definition */
-typedef struct my_pthread_mutex_t {
+typedef struct _my_pthread_mutex_t {
     /* add something here */
     int lock;
     thread_control_block *lock_owner;
@@ -101,4 +103,19 @@ int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex);
 /* destroy the mutex */
 int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex);
 
+
+
+#define USE_MY_PTHREAD 1 (comment it if you want to use pthread)
+
+#ifdef USE_MY_PTHREAD
+#define pthread_t my_pthread_t
+#define pthread_mutex_t my_pthread_mutex_t
+#define pthread_create my_pthread_create
+#define pthread_exit my_pthread_exit
+#define pthread_join my_pthread_join
+#define pthread_mutex_init my_pthread_mutex_init
+#define pthread_mutex_lock my_pthread_mutex_lock
+#define pthread_mutex_unlock my_pthread_mutex_unlock
+#define pthread_mutex_destroy my_pthread_mutex_destroy
+#endif
 #endif

@@ -3,15 +3,16 @@
 // Date:	10/01/2019
 
 // name:  Bo Han, Bo Zhang
-// username of iLab:
-// iLab Server:
+// username of iLab:bh398
+// iLab Server:ilab3
 
 #include "my_pthread_t.h"
 
 #define STACKSIZE 5*1024
 #define TIMEUNIT 25
 #define MAX_THREAD_NUMBER 100
-#define NUMBER_OF_QUEUE_LEVELS 3
+#define NUMBER_OF_QUEUE_LEVELS 7
+#define LOWEST_PRIORITY (NUMBER_OF_QUEUE_LEVELS - 1)
 
 static int initialized = 0;
 static int thread_counter = 0;
@@ -104,13 +105,18 @@ void schedule(int signum) {
     sigprocmask(SIG_SETMASK, &signal_mask, NULL);
     /** handle the last running thread first, put it into the corresponding queue according to its thread states */
     thread_control_block *last_running_thread = current_running_thread;
-    int new_priority = last_running_thread->priority + 1;
+    int new_priority;
     switch (last_running_thread->states) {
         case TERMINATED:
             insert_thread_to_rear(finished_queue, last_running_thread);
             awake_joining_threads(last_running_thread);
             break;
         case READY:
+            if (last_running_thread->temporary_priority != -1) new_priority = last_running_thread->temporary_priority;
+            else {
+                new_priority = last_running_thread->priority + 1;
+                last_running_thread->priority++;
+            }
             insert_thread_to_rear(ready_queues[new_priority], last_running_thread);
             break;
         case WAITING:
@@ -127,9 +133,8 @@ void schedule(int signum) {
     thread_queue *current_queue = nonempty_queue_with_highest_priority();
     if (current_queue == NULL) return;
     else current_running_thread = pop_thread_from_head(current_queue);
-    if (current_running_thread->priority != NUMBER_OF_QUEUE_LEVELS - 1) {
-        setitimer(ITIMER_VIRTUAL, &time_quantum[current_running_thread->priority], NULL);
-    }
+//    if (current_running_thread->priority != NUMBER_OF_QUEUE_LEVELS - 1) {
+    setitimer(ITIMER_VIRTUAL, &time_quantum[current_queue->priority], NULL);
     sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
     swapcontext(&(last_running_thread->thread_context), &(current_running_thread->thread_context));
 }
@@ -159,7 +164,7 @@ void *thread_task_wrapper(void *(*function)(void *), void *arg) {
  */
 void function_after_task_finished() {
     sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
-    printf("Thread %d is finished \n", current_running_thread->thread_id);
+    //printf("Thread %d is finished \n", current_running_thread->thread_id);
     free((current_running_thread->thread_context.uc_stack.ss_sp));
     current_running_thread->thread_context.uc_stack.ss_sp = NULL;
     sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
@@ -201,17 +206,22 @@ int environment_initialize() {
     main_function_thread->is_main = 1;
     main_function_thread->states = RUNNING;
     main_function_thread->priority = 0;
+    main_function_thread->temporary_priority = -1;
     main_function_thread->joined_by = NULL;
     main_function_thread->next = NULL;
     all_threads[main_function_thread->thread_id] = main_function_thread;
     current_running_thread = main_function_thread;
 
-    for (i = 0; i < NUMBER_OF_QUEUE_LEVELS; i++) {
+    for (i = 0; i < NUMBER_OF_QUEUE_LEVELS - 1; i++) {
         time_quantum[i].it_value.tv_sec = 0;
         time_quantum[i].it_interval.tv_sec = 0;
         time_quantum[i].it_value.tv_usec = TIMEUNIT * (i + 1);
         time_quantum[i].it_interval.tv_usec = TIMEUNIT * (i + 1);
     }
+    time_quantum[i].it_value.tv_sec = 0;
+    time_quantum[i].it_interval.tv_sec = 0;
+    time_quantum[i].it_value.tv_usec = 0;
+    time_quantum[i].it_interval.tv_usec = 0;
 
     signal(SIGVTALRM, schedule);
 
@@ -232,7 +242,7 @@ int my_pthread_create(my_pthread_t *thread, pthread_attr_t *attr, void *(*functi
     if (initialized == 0) {
         environment_initialize();
         initialized = 1;
-        printf("Environment initialized \n");
+        //printf("Environment initialized \n");
     }
     thread_control_block *tcb = NULL;
     tcb = (thread_control_block *) malloc(sizeof(thread_control_block));
@@ -251,6 +261,7 @@ int my_pthread_create(my_pthread_t *thread, pthread_attr_t *attr, void *(*functi
     tcb->is_main = 0;
     tcb->states = READY;
     tcb->priority = 0;
+    tcb->temporary_priority = -1;
     tcb->joined_by = NULL;
     tcb->next = NULL;
     insert_thread_to_rear(ready_queues[tcb->priority], tcb);
@@ -261,7 +272,7 @@ int my_pthread_create(my_pthread_t *thread, pthread_attr_t *attr, void *(*functi
 
 /* give CPU procession to other user level threads voluntarily */
 int my_pthread_yield() {
-    printf("thread %d yields \n", current_running_thread->thread_id);
+    //printf("thread %d yields \n", current_running_thread->thread_id);
     raise(SIGVTALRM);
     return 0;
 };
@@ -277,7 +288,7 @@ void my_pthread_exit(void *value_ptr) {
 int my_pthread_join(my_pthread_t thread, void **value_ptr) {
     sigprocmask(SIG_SETMASK, &signal_mask, NULL);
     thread_control_block *joinedThread = all_threads[thread];
-    printf("Thread %d is joined to thread %d \n", current_running_thread->thread_id, joinedThread->thread_id);
+    //printf("Thread %d is joined to thread %d \n", current_running_thread->thread_id, joinedThread->thread_id);
     if (joinedThread->states != TERMINATED) {
         current_running_thread->states = BLOCKED;
         current_running_thread->next = joinedThread->joined_by;
@@ -299,9 +310,23 @@ int my_pthread_mutex_init(my_pthread_mutex_t *mutex, const pthread_mutexattr_t *
     return 0;
 };
 
+void detect_priority_inversion(my_pthread_mutex_t *mutex) {
+    thread_control_block *owner = mutex->lock_owner;
+    int current_priority = owner->priority;
+    thread_control_block *waiting_thread = mutex->waiting_queue;
+    while (waiting_thread != NULL) {
+        if (waiting_thread->priority < current_priority) current_priority = waiting_thread->priority;
+        waiting_thread = waiting_thread->next;
+    }
+    if (current_priority < owner->priority) owner->temporary_priority = current_priority;
+    return;
+}
+
+
 /* aquire the mutex lock */
 /**
  * Each mutex has its own waiting queue. If a thread fails to get te lock this time, it is put into the waiting queue.
+ * Each time a new thread trying to get the mutex, detect if there is priority inversion
  */
 int my_pthread_mutex_lock(my_pthread_mutex_t *mutex) {
     while (1) {
@@ -309,11 +334,13 @@ int my_pthread_mutex_lock(my_pthread_mutex_t *mutex) {
         if ((__sync_lock_test_and_set(&mutex->lock, 1)) == 0) {
             mutex->lock_owner = current_running_thread;
             sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
+            detect_priority_inversion(mutex);
             return 0;
         } else {
             current_running_thread->states = WAITING;
             current_running_thread->next = mutex->waiting_queue;
             mutex->waiting_queue = current_running_thread;
+            detect_priority_inversion(mutex);
             sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
             raise(SIGVTALRM);
         }
@@ -322,11 +349,13 @@ int my_pthread_mutex_lock(my_pthread_mutex_t *mutex) {
 
 /* release the mutex lock */
 /**
- * Unlock the mutex, and awake the first waiting thread in the waiting queue, if there is any.
+ * Unlock the mutex, and awake the first waiting thread in the waiting queue to get the lock, if there is any.
+ * If current lock owner has a temporary priority to handle the priority inversion, reset it to normal mode.
  */
 int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex) {
     sigprocmask(SIG_SETMASK, &signal_mask, NULL);
     mutex->lock = 0;
+    mutex->lock_owner->temporary_priority = -1;
     mutex->lock_owner = NULL;
     if (mutex->waiting_queue != NULL) {
         thread_control_block *next_lock_owner = mutex->waiting_queue;
