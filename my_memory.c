@@ -8,13 +8,13 @@
 
 #define malloc(x) myallocate(x, __FILE__, __LINE__, THREADREQ)
 #define THREADREQ 1
+#define PAGE_SIZE 4096 * pow(2, 10)
 
 static int initialized = 0;
 
 char *memory;
 
 void* myallocate(int x, char* file, int line, int thread_req){
-
 }
 
 
