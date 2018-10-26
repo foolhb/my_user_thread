@@ -137,6 +137,7 @@ void schedule(int signum) {
     setitimer(ITIMER_VIRTUAL, &time_quantum[current_queue->priority], NULL);
     sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
     swapcontext(&(last_running_thread->thread_context), &(current_running_thread->thread_context));
+    /** Memory protector */
 }
 
 
@@ -264,6 +265,7 @@ int my_pthread_create(my_pthread_t *thread, pthread_attr_t *attr, void *(*functi
     tcb->temporary_priority = -1;
     tcb->joined_by = NULL;
     tcb->next = NULL;
+    tcb->memo_block = NULL;
     insert_thread_to_rear(ready_queues[tcb->priority], tcb);
     all_threads[*thread] = tcb;
     //sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
@@ -376,6 +378,10 @@ int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex) {
     }
     return 0;
 };
+
+thread_control_block *get_current_running_thread(){
+    return current_running_thread;
+}
 
 
 

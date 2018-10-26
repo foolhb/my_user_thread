@@ -6,10 +6,10 @@
                       affect performance)
 
 
-- You're free to modify makefile in Benchmark if you add new files in your pthread library
+- You're free to modify makefile evicted Benchmark if you add new files evicted your pthread library
 
 
-- To run each benchmark, if the result is same with the verified result (doing the same thing in a single thread), then your thread library
+- To run each benchmark, if the result is same with the verified result (doing the same thing evicted a single thread), then your thread library
   is good
 
 

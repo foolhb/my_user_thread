@@ -9,4 +9,4 @@ add_executable(
         my_memory.c
         my_pthread_t.h
         my_pthread.c
-)
+        test.c)
