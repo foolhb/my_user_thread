@@ -41,7 +41,7 @@ typedef struct _page_node {
 
 typedef struct _memory_block {
     int page[20];
-    int next_free[20];
+    //int next_free[20];
     int current_page;
 } memory_control_block;
 
