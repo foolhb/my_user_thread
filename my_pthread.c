@@ -17,10 +17,7 @@
 static int initialized = 0;
 static int thread_counter = 0;
 static int schedule_invoking_times = 0;
-
-thread_control_block *all_threads[MAX_THREAD_NUMBER];
-thread_queue *ready_queues[NUMBER_OF_QUEUE_LEVELS];
-thread_queue *finished_queue;
+ 
 
 ucontext_t return_context;
 thread_control_block *current_running_thread = NULL;
