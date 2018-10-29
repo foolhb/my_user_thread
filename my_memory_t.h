@@ -10,10 +10,12 @@
 
 #include"my_pthread_t.h"
 
-typedef struct _memory_block_head{
-    struct _memory_block_head* pre;
-    struct _memory_block_head* next;
-    uint free;
-    int size;
-} memo_head;
+void memory_manager(thread_control_block *tcb);
+
+void mydeallocate(char *p);
+
+void *myallocate(int x, char *file, int line, int thread_req);
+
+
+
 

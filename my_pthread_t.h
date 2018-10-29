@@ -12,17 +12,10 @@
 #define _GNU_SOURCE
 
 /* include lib header files that you need here: */
-#include <unistd.h>
-#include <sys/syscall.h>
-#include <sys/types.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <ucontext.h>
-#include <signal.h>
-#include <string.h>
 #include <sys/time.h>
-#include <malloc.h>
 #include <time.h>
+
 
 typedef enum thread_states {
     READY = 1,
@@ -32,16 +25,14 @@ typedef enum thread_states {
     TERMINATED = 5,
 };
 
-typedef unsigned long int my_pthread_t;
-
-typedef struct _page_node {
-    int page_no;
-    struct _page_node *next;
-} page_node;
+/**
+ * Try to set this int instead of long int
+ */
+typedef long int my_pthread_t;
 
 typedef struct _memory_block {
     int page[20];
-    //int next_free[20];
+    int next_free[20];
     int current_page;
 } memory_control_block;
 
@@ -114,7 +105,8 @@ int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex);
 /* destroy the mutex */
 int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex);
 
-thread_control_block *get_current_running_thread();
+thread_control_block* get_current_running_thread();
+
 
 
 #define USE_MY_PTHREAD 1 (comment it if you want to use pthread)
