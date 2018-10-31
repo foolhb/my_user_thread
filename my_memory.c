@@ -4,6 +4,7 @@
 
 #include "my_memory_t.h"
 #include "my_pthread_t.h"
+//#include "test_stub.h"
 #include <malloc.h>
 #include <math.h>
 #include <string.h>
@@ -105,7 +106,7 @@ void initialize() {
     //初始化position时，默认position = page number
     initialized = 1;
     printf("Memory environment Initializing! \n");
-    FILE * virtual_memory;
+    FILE *virtual_memory;
     if ((virtual_memory = fopen("virtual_memory", "wb")) == NULL) {
         printf("Fail to creating virtual memory file!\n");
     }
@@ -270,7 +271,7 @@ void *allocate_on_page(int size, int page_no) {
  * Find the head based on the input parameter, and update the rightmost bit.
  * @param p : memory chunk to free
  */
-void mydeallocate(char *p) {
+void mydeallocate(char *p, char *file, int line, int thread_req) {
     node_t *nodePtr = p - sizeof(node_t);
     (nodePtr->head)--;
     return;
@@ -333,6 +334,7 @@ void *myallocate(int x, char *file, int line, int thread_req) {
         if (pointer == 0 && i < MAX_PAGE_A_THREAD_CAN_USE && memo_block->page[i] == -1) {
             // mode = user = 1
             memo_block->page[i] = find_a_free_page(1, current_thread->thread_id);
+            page_initialize(memo_block->page[i]);
             // No page available
             if (memo_block->page[i] == -1) return NULL;
             // Swap in this page first if it is not in the memory
@@ -353,6 +355,7 @@ void *myallocate(int x, char *file, int line, int thread_req) {
         }
         void *pointer = 0;
         int page_no = find_a_free_page(0, 0);
+        page_initialize(page_no);
         pointer = allocate_on_page(x, page_no);
         if (pointer != 0) return pointer;
         else {

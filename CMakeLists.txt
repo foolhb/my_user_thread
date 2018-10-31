@@ -4,8 +4,8 @@ project(my_user_thread C)
 set(CMAKE_C_STANDARD 99)
 
 add_executable(my_user_thread
-        my_pthread_t.h
-        my_pthread.c
-        my_memory_t.h
-        my_memory.c
-        main.c)
+        my_pthread_t.h my_pthread.c
+        my_memory_t.h my_memory.c
+        main.c
+#        test_stub.h test_stub.c
+        )

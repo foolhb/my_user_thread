@@ -16,7 +16,12 @@
 #include <malloc.h>
 
 #include "my_pthread_t.h"
-//#include "my_memory_t.h"
+#include "my_memory_t.h"
+
+
+#define malloc(x) myallocate(x, __FILE__, __LINE__, THREADREQ)
+#define free(x) mydeallocate(x, __FILE__, __LINE__, THREADREQ)
+#define THREADREQ 1
 
 #define STACKSIZE (4*1024 - 1)
 #define TIMEUNIT 25
@@ -34,6 +39,7 @@ thread_queue *finished_queue;
 
 ucontext_t return_context;
 thread_control_block *current_running_thread = NULL;
+thread_control_block *main_function_thread = NULL;
 
 struct itimerval time_quantum[NUMBER_OF_QUEUE_LEVELS];
 sigset_t signal_mask;
@@ -206,12 +212,16 @@ int environment_initialize() {
     return_context.uc_link = 0;
     makecontext(&return_context, function_after_task_finished, 0);
 
-    thread_control_block *main_function_thread = NULL;
-    main_function_thread = (thread_control_block *) malloc(sizeof(thread_control_block));
+    //thread_control_block *main_function_thread = NULL;
+    //if (main_function_thread == NULL), then the main function context hasn't been initialized yet
+    //This is to
+    if (main_function_thread == NULL) {
+        main_function_thread = (thread_control_block *) malloc(sizeof(thread_control_block));
+    }
     main_function_thread->thread_id = 0;
     getcontext(&(main_function_thread->thread_context));
-    main_function_thread->thread_context.uc_stack.ss_size = 10 * STACKSIZE;
-    main_function_thread->thread_context.uc_stack.ss_sp = (char *) malloc(10 * STACKSIZE);
+    main_function_thread->thread_context.uc_stack.ss_size = STACKSIZE;
+    main_function_thread->thread_context.uc_stack.ss_sp = (char *) malloc(STACKSIZE);
     main_function_thread->thread_context.uc_link = &return_context;
     main_function_thread->is_main = 1;
     main_function_thread->states = RUNNING;
@@ -388,5 +398,11 @@ int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex) {
 };
 
 thread_control_block *get_current_running_thread() {
+    if(main_function_thread == NULL && current_running_thread == NULL){
+        main_function_thread = (thread_control_block*) malloc(sizeof(thread_control_block));
+        main_function_thread->thread_id = 0;
+        current_running_thread = main_function_thread;
+        return main_function_thread;
+    }
     return current_running_thread;
 }
