@@ -1,0 +1,1 @@
+gcc -g main.c my_memory.c my_memory_t.h my_pthread.c my_pthread_t.h -o dbtest

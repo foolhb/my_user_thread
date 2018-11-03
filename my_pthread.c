@@ -19,11 +19,11 @@
 #include "my_memory_t.h"
 
 
-#define malloc(x) myallocate(x, __FILE__, __LINE__, THREADREQ)
-#define free(x) mydeallocate(x, __FILE__, __LINE__, THREADREQ)
+//#define malloc(x) myallocate(x, __FILE__, __LINE__, THREADREQ)
+//#define free(x) mydeallocate(x, __FILE__, __LINE__, THREADREQ)
 #define THREADREQ 0
 
-#define STACKSIZE (4*1024 - 1)
+#define STACKSIZE (10*1024 - 1)
 #define TIMEUNIT 25
 #define MAX_THREAD_NUMBER 100
 #define NUMBER_OF_QUEUE_LEVELS 7
@@ -150,6 +150,7 @@ void schedule(int signum) {
     if (current_queue == NULL) return;
     else current_running_thread = pop_thread_from_head(current_queue);
 //    if (current_running_thread->priority != NUMBER_OF_QUEUE_LEVELS - 1) {
+    memory_manager(current_running_thread);
     setitimer(ITIMER_VIRTUAL, &time_quantum[current_queue->priority], NULL);
     sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
     swapcontext(&(last_running_thread->thread_context), &(current_running_thread->thread_context));
