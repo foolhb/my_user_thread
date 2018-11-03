@@ -17,8 +17,11 @@
 
 #define DEFAULT_THREAD_NUM 4
 
-#define C_SIZE 1000
-#define R_SIZE 240
+//#define C_SIZE 1000
+//#define R_SIZE 10
+
+#define C_SIZE 100
+#define R_SIZE 10
 
 pthread_mutex_t mutex;
 
@@ -31,11 +34,16 @@ int *a[R_SIZE];
 int pSum[R_SIZE];
 int sum = 0;
 
+
 /* A CPU-bound task to do parallel array addition */
 void parallel_calculate(void *arg) {
-    int *temp;
-    temp = (int *) malloc(sizeof(int) * C_SIZE * R_SIZE);
     int i = 0, j = 0;
+
+//    int *temp[10];
+//    for (i = 0; i < 10; ++i) {
+//        temp[i] = (int *) malloc(10 * sizeof(int));
+//    }
+
     int n = *((int *) arg);
 
     for (j = n; j < R_SIZE; j += thread_num) {
@@ -89,10 +97,9 @@ int main(int argc, char **argv) {
     thread = (pthread_t *) malloc(thread_num * sizeof(pthread_t));
 
     // initialize data array
-    for (i = 0; i < R_SIZE; ++i) {
+    for (i = 0; i < R_SIZE; ++i)
         a[i] = (int *) malloc(C_SIZE * sizeof(int));
-        if (a[i] == NULL) printf("%d\n", i);
-    }
+
     for (i = 0; i < R_SIZE; ++i)
         for (j = 0; j < C_SIZE; ++j)
             a[i][j] = j;

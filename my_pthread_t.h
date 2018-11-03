@@ -32,7 +32,6 @@ typedef long int my_pthread_t;
 
 typedef struct _memory_block {
     int* page;
-    int next_free[20];
     int current_page;
 } memory_control_block;
 

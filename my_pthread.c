@@ -19,11 +19,11 @@
 #include "my_memory_t.h"
 
 
-//#define malloc(x) myallocate(x, __FILE__, __LINE__, THREADREQ)
-//#define free(x) mydeallocate(x, __FILE__, __LINE__, THREADREQ)
+#define malloc(x) myallocate(x, __FILE__, __LINE__, THREADREQ)
+#define free(x) mydeallocate(x, __FILE__, __LINE__, THREADREQ)
 #define THREADREQ 0
 
-#define STACKSIZE (10*1024 - 1)
+#define STACKSIZE (10*1024)
 #define TIMEUNIT 25
 #define MAX_THREAD_NUMBER 100
 #define NUMBER_OF_QUEUE_LEVELS 7
@@ -152,8 +152,10 @@ void schedule(int signum) {
 //    if (current_running_thread->priority != NUMBER_OF_QUEUE_LEVELS - 1) {
     memory_manager(current_running_thread);
     setitimer(ITIMER_VIRTUAL, &time_quantum[current_queue->priority], NULL);
-    sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
     swapcontext(&(last_running_thread->thread_context), &(current_running_thread->thread_context));
+    /***/
+    // Update: Make the signal_mask cover the whole scheduler
+    sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
 }
 
 
@@ -213,9 +215,8 @@ int environment_initialize() {
     return_context.uc_link = 0;
     makecontext(&return_context, function_after_task_finished, 0);
 
-    //thread_control_block *main_function_thread = NULL;
-    //if (main_function_thread == NULL), then the main function context hasn't been initialized yet
-    //This is to
+    //if (main_function_thread != NULL),
+    // main_function_thread has been initialized in get_current_running_thread() function
     if (main_function_thread == NULL) {
         main_function_thread = (thread_control_block *) malloc(sizeof(thread_control_block));
     }
@@ -399,8 +400,10 @@ int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex) {
 };
 
 thread_control_block *get_current_running_thread() {
-    if(main_function_thread == NULL && current_running_thread == NULL){
-        main_function_thread = (thread_control_block*) malloc(sizeof(thread_control_block));
+    //If alloc is called in main thread before any p_thread_create, current_running_thread
+    //will be NULL. Initialize it here.
+    if (main_function_thread == NULL && current_running_thread == NULL) {
+        main_function_thread = (thread_control_block *) malloc(sizeof(thread_control_block));
         main_function_thread->thread_id = 0;
         current_running_thread = main_function_thread;
         return main_function_thread;
