@@ -14,7 +14,7 @@ void memory_manager(thread_control_block *tcb);
 
 void mydeallocate(char *p, char *file, int line, int thread_req);
 
-void *myallocate(int x, char *file, int line, int thread_req);
+void *myallocate(int size, char *file, int line, int thread_req);
 
 
 

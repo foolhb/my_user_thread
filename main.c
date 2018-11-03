@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include <memory.h>
 
-#define THREADREQ 0
+#define THREADREQ 1
 #define malloc(x) myallocate(x, __FILE__, __LINE__, THREADREQ)
 #define free(x) mydeallocate(x, __FILE__, __LINE__, THREADREQ)
 

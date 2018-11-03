@@ -21,7 +21,7 @@
 
 #define malloc(x) myallocate(x, __FILE__, __LINE__, THREADREQ)
 #define free(x) mydeallocate(x, __FILE__, __LINE__, THREADREQ)
-#define THREADREQ 1
+#define THREADREQ 0
 
 #define STACKSIZE (4*1024 - 1)
 #define TIMEUNIT 25
