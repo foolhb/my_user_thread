@@ -107,7 +107,8 @@ int find_page_to_evict(int page_to_swapin) {
     // Didn't consider this: what if we input a page that already in the memory?
     int page_to_evict = -1;
     int position = page_to_swapin % NUMBER_OF_FRAMES;
-    for (int i = 0; i < 3; i++) {
+    int i = 0;
+    for (i = 0; i < 3; i++) {
         page_to_evict = i * NUMBER_OF_FRAMES + position;
         if (page_table[page_to_evict].position == position) break;
     }
@@ -166,7 +167,8 @@ void initialize() {
     }
     fclose(virtual_memory);
     memory = (char *) malloc(sizeof(char) * PHYSICAL_MEMORY_SIZE);
-    for (int i = 0; i < NUMBER_OF_PAGES; i++) {
+    int i = 0;
+    for (i = 0; i < NUMBER_OF_PAGES; i++) {
         page_table[i].page_no = i;
         page_table[i].page_owner = -1;
         page_table[i].position = i;
@@ -190,46 +192,41 @@ int find_free_pages(int mode, my_pthread_t thread_id) {
     //User mode: 遍历user区
     int page_no = -1;
     if (mode == KERNEL_MODE) {
-        for (int base = 0; base < 3; base++) {
-            for (int offset = 0; offset < NUMBER_OF_KERNEL_PAGES; offset++) {
-                page_no = base * NUMBER_OF_FRAMES + offset;
-                if (page_table[page_no].page_owner == -1) {
-                    page_table[page_no].page_owner = 0;
-                    return page_no;
-                }
+        for (page_no = 0; page_no < NUMBER_OF_KERNEL_PAGES; page_no++) {
+            if (page_table[page_no].page_owner == -1) {
+                page_table[page_no].page_owner = 1;
+                return page_no;
             }
         }
         printf("Error! Can not find a free kernel page! \n");
         return -1;
     } else if (mode == USER_MODE) {
-        for (int base = 0; base < 3; base++) {
-            for (int offset = 0 + NUMBER_OF_KERNEL_PAGES + NUMBER_OF_SHARED_PAGES;
-                 offset < NUMBER_OF_FRAMES; offset++) {
-                page_no = base * NUMBER_OF_FRAMES + offset;
-                if (page_table[page_no].page_owner == -1) {
-                    int unconflicted = 1;
-                    for (int i = 0; i <= 2; i++) {
-                        if (page_table[i * NUMBER_OF_FRAMES + offset].page_owner == thread_id)
-                            unconflicted = 0;
-                        break;
-                    }
-                    if (unconflicted) {
-                        page_table[page_no].page_owner = thread_id;
-                        return page_no;
-                    } else continue;
+        int base = 0, offset = 0;
+        for (offset = 0 + NUMBER_OF_KERNEL_PAGES + NUMBER_OF_SHARED_PAGES;
+             offset < NUMBER_OF_FRAMES; offset++) {
+            int unconflicted = 1;
+            for (base = 0; base <= 2; base++) {
+                int i = base * NUMBER_OF_FRAMES + offset;
+                if (page_table[i].page_owner == thread_id) {
+                    unconflicted = 0;
+                }
+                if (page_table[i].page_owner == -1 && (page_no == -1 || page_table[page_no].position == offset)) {
+                    page_no = i;
                 }
             }
-            printf("Error! Can not find a free user page! \n");
-            return -1;
+            if (unconflicted) {
+                page_table[page_no].page_owner = thread_id;
+                return page_no;
+            } else continue;
         }
+        printf("Error! Can not find a free user page! \n");
+        return -1;
     } else if (mode == 2) {
-        for (int base = 0; base < 3; base++) {
-            for (int offset = 0 + NUMBER_OF_KERNEL_PAGES + NUMBER_OF_SHARED_PAGES;
-                 offset < 0 + NUMBER_OF_KERNEL_PAGES + NUMBER_OF_SHARED_PAGES; offset++) {
-                if (page_table[page_no].page_owner == -1) {
-                    page_table[page_no].page_owner = 0;
-                    return page_no;
-                }
+        for (page_no = 0 + NUMBER_OF_KERNEL_PAGES;
+             page_no < 0 + NUMBER_OF_KERNEL_PAGES + NUMBER_OF_SHARED_PAGES; page_no++) {
+            if (page_table[page_no].page_owner == -1) {
+                page_table[page_no].page_owner = 0;
+                return page_no;
             }
         }
         printf("Error! Can not find a free shared page! \n");
@@ -246,13 +243,15 @@ void memory_copy(char *memo1, char *memo2, int size, char *mode) {
     //cover: move memo1 to memo2 and cover memo2, memo2 is lost
     char temp;
     if (strcmp(mode, "swap") == 0) {
-        for (int i = 0; i < size; i++) {
+        int i = 0;
+        for (i = 0; i < size; i++) {
             temp = memo1[i];
             memo1[i] = memo2[i];
             memo2[i] = temp;
         }
     } else if (strcmp(mode, "cover") == 0) {
-        for (int i = 0; i < size; i++)
+        int i = 0;
+        for (i = 0; i < size; i++)
             memo2[i] = memo1[i];
     }
     return;
@@ -339,13 +338,12 @@ void *allocate_on_page(int size, int page_no) {
 }
 
 int eligible_for_across_pages(int frame_no, my_pthread_t thread_id) {
-    int page_no = -1;
-    for (int base = 0; base < 3; base++) {
+    int page_no = -1, base = 0;
+    for (base = 0; base < 3; base++) {
         int i = NUMBER_OF_FRAMES * base + frame_no;
         if (page_table[i].page_owner == thread_id) return -1;
-        if (page_table[i].page_owner == -1) {
-            if (page_no == -1) page_no = i;
-            else if (page_table[i].position == frame_no) page_no = i;
+        if (page_table[i].page_owner == -1 && (page_no == -1 || page_table[i].position == frame_no)) {
+            page_no = i;
         }
     }
     if (page_no == -1) return -1;
@@ -373,14 +371,15 @@ void *allocate_across_pages(int size, thread_control_block *tcb) {
         frame_no++;
     }
     if (i != number_of_pages_needed) return NULL;
-    for (int j = 0; j < number_of_pages_needed; j++) {
+    int j = 0;
+    for (j = 0; j < number_of_pages_needed; j++) {
         int page_to_evict = find_page_to_evict(continuous_pages[j]);
         swap_page(continuous_pages[j], page_to_evict);
         page_table[continuous_pages[j]].page_owner = thread_id;
         page_table[continuous_pages[j]].next = (j < number_of_pages_needed - 1 ? continuous_pages[j + 1] : -1);
         page_initialize(continuous_pages[j]);
     }
-    for (int j = 0; i < MAX_PAGE_NUMBER_OF_A_THREAD; i++) {
+    for (j = 0; i < MAX_PAGE_NUMBER_OF_A_THREAD; i++) {
         if (tcb->memo_block->page[j] == -1) {
             tcb->memo_block->page[j] = continuous_pages[0];
             return get_start_address_of_page(continuous_pages[0]);
@@ -412,7 +411,8 @@ void *myallocate(int size, char *file, int line, int thread_req) {
             current_thread->memo_block = (memory_control_block *) malloc(sizeof(memory_control_block));
             current_thread->memo_block->page = (int *) malloc(sizeof(int) * MAX_PAGE_NUMBER_OF_A_THREAD);
             current_thread->memo_block->current_page = -1;
-            for (int i = 0; i < MAX_PAGE_NUMBER_OF_A_THREAD; i++) {
+            int i = 0;
+            for (i = 0; i < MAX_PAGE_NUMBER_OF_A_THREAD; i++) {
                 current_thread->memo_block->page[i] = -1;
             }
         }
@@ -421,8 +421,7 @@ void *myallocate(int size, char *file, int line, int thread_req) {
             if (pointer != 0) {
                 sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
                 return pointer;
-            }
-            else {
+            } else {
                 printf("Variable too large, can't allocate across pages! \n");
                 sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
                 return NULL;
@@ -476,8 +475,7 @@ void *myallocate(int size, char *file, int line, int thread_req) {
         if (pointer != 0) {
             sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
             return pointer;
-        }
-        else {
+        } else {
             printf("Warning: kernel space full! \n");
             sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
             return NULL;
@@ -511,7 +509,8 @@ void mydeallocate(char *p, char *file, int line, int thread_req) {
 void memory_manager(thread_control_block *tcb) {
     memory_control_block *memo_block = tcb->memo_block;
     if (memo_block == NULL) return;
-    for (int i = 0; memo_block->page[i] != -1 && i < MAX_PAGE_NUMBER_OF_A_THREAD; i++) {
+    int i = 0;
+    for (i = 0; memo_block->page[i] != -1 && i < MAX_PAGE_NUMBER_OF_A_THREAD; i++) {
         int page_to_evict = find_page_to_evict(memo_block->page[i]);
         swap_page(memo_block->page[i], page_to_evict);
     }
