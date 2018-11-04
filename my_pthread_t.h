@@ -28,7 +28,7 @@ typedef enum thread_states {
 /**
  * Try to set this int instead of long int
  */
-typedef long int my_pthread_t;
+typedef int my_pthread_t;
 
 typedef struct _memory_block {
 //    int* page;

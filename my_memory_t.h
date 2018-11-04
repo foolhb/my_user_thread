@@ -10,7 +10,7 @@
 
 #include"my_pthread_t.h"
 
-void memory_manager(thread_control_block *tcb);
+void memory_manager();
 
 void mydeallocate(char *p, char *file, int line, int thread_req);
 

@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <sys/mman.h>
+#include <bits/siginfo.h>
 
 
 #define THREADREQ 1
@@ -28,17 +29,18 @@
 #define FILENAME "swap_file"
 
 
-void memory_manager(thread_control_block *tcb);
+void memory_manager();
 
-//Pay attention to this: when searching free page,do not allocate kernel page to a thread!
-//Modify anywhere you write like this!
+
+void page_fault_handler(int signum, siginfo_t *si, void *unused);
+
 
 /**
  * Page table entry to record page number, owner thread and position(position also indicates whether it is evicted)
  * Size: 12 Bytes
  */
 typedef struct _page_table_entry {
-    int page_no;
+//    int page_no;
     my_pthread_t page_owner;
     int position;
     int next;
@@ -54,29 +56,25 @@ typedef struct __node_t {
     int head;
 } node_t;
 
-static int initialized = 0;
-
 char *memory;
-
+struct sigaction *page_fault_sigaction;
 page_table_entry page_table[NUMBER_OF_PAGES];
-//page_table_entry *frame_table[NUMBER_OF_FRAMES];
 
 sigset_t signal_mask;
-
+static int initialized = 0;
 
 /**
- * Part I: Helper function for basic operations of pages, frames and page table, etc, including get the start address of
- * a page; given the page to swap in, find the page in the physical memory which is in the required slot; initialize the
- * usage record of a new page;
+ * Part I: Helper function for basic operations of pages, frames and page table, etc,
+ * including get the start address of a page; given the page to swap in, find the page in the
+ * physical memory which is in the required slot; initialize the usage record of a new page;
  */
 
 /**
  * Get the starting address of a page
  * @param page_no
- * @return a pointer that points to the start address
+ * @return a pointer that points to the start address of this page
  */
 void *get_start_address_of_page(int page_no) {
-    //获取page的首地址，首先计算出frame number
     int frame_no = page_table[page_no].position;
     if (frame_no > NUMBER_OF_FRAMES) {
         printf("Page to access not in physical memory now\n");
@@ -87,7 +85,7 @@ void *get_start_address_of_page(int page_no) {
 }
 
 /**
- *
+ * Update the access permission of a page according to prot.
  * @param page_no
  * @param prot: forbid = PROT_NONE | PROT_WRITE; allow = PROT_READ
  * @return
@@ -100,7 +98,7 @@ int mprotect_a_page(int page_no, int prot) {
 }
 
 /**
- *
+ * Update the access permission of a all user pages in the memory
  * @param prot: forbid = PROT_NONE | PROT_WRITE; allow = PROT_READ
  * @return
  */
@@ -114,13 +112,35 @@ int mprotect_all_pages(int prot) {
 
 
 /**
- * Given a pointer, get the page which it lies in
+ * Given a pointer which points to a variable, get the page where the variable is located
  * @param p
  * @return
  */
 int get_page_by_address(char *p) {
     char *start = &memory[0];
     return (int) ((p - start) / PAGE_SIZE);
+}
+
+
+/**
+ * Initialize a new page: initialize a head to indicate that the whole page is empty
+ * @param page_no
+ */
+void page_initialize(int page_no) {
+    // The initial head will be 0001111111111110,
+    // That means next memory chunk is 4095Kb, and is not used
+    node_t *p = get_start_address_of_page(page_no);
+    p->head = 4095 << 1;
+}
+
+
+/**
+ * Open the swap file to store evicted pages
+ * @return an open file handler
+ */
+FILE *open_virtual_memory() {
+    FILE *fp = fopen(FILENAME, "rb+");
+    return fp;
 }
 
 
@@ -143,31 +163,28 @@ int find_page_to_evict(int page_to_swapin) {
 
 
 /**
- * Initialize a new page: initial a head to indicate that the whole page is empty
- * @param page_no
+ * Copy data from memory1 to memory2.
+ * @param memo1: points to a memory chunk with data in it
+ * @param memo2: points to a memory chunk with data in it
+ * @param size: Size of data that needs to be copied
+ * @param mode "swap": swap data in two areas, "cover": use data in memory1 to cover memory2
  */
-void page_initialize(int page_no) {
-    //根据page number初始化page
-    //首先根据page number找到这个page所在的位置，如果不在memory中在文件中，报错
-    //初始化记录内存使用记录，length = 4096 - 1，used = 0
-//    int frame_no = page_table[page_no].position;
-//    if (frame_no > NUMBER_OF_FRAMES) {
-//        printf("Page to initialize is not in physical memory now\n");
-//        return;
-//    }
-//    node_t *p = &memory[frame_no * PAGE_SIZE];
-    node_t *p = get_start_address_of_page(page_no);
-    p->head = 4095 << 1;
-
-}
-
-/**
- * Open the file to store evicted pages
- * @return an open file handler
- */
-FILE *open_virtual_memory() {
-    FILE *fp = fopen(FILENAME, "rb+");
-    return fp;
+void memory_copy(char *memo1, char *memo2, int size, char *mode) {
+    //mode = "swap" or "cover"
+    //cover: move memo1 to memo2 and cover memo2, memo2 is lost
+    char temp;
+    if (strcmp(mode, "swap") == 0) {
+        int i = 0;
+        for (i = 0; i < size; i++) {
+            temp = memo1[i];
+            memo1[i] = memo2[i];
+            memo2[i] = temp;
+        }
+    } else if (strcmp(mode, "cover") == 0) {
+        int i = 0;
+        for (i = 0; i < size; i++)
+            memo2[i] = memo1[i];
+    }
 }
 
 
@@ -177,33 +194,34 @@ FILE *open_virtual_memory() {
 
 
 /**
- * Allocate a long char array (This will be our physical memory), create the virtual memory file, initialize the page table
+ * Initialize library environment.
+ * Pay attention: this library is not stateless and mustn't be interrupt
  */
 void initialize() {
-    //分配memory空间
-    //初始化page table
-    //初始化position时，默认position = page number
     initialized = 1;
     printf("Memory environment Initializing! \n");
+    //initialize signal mask;
     sigemptyset(&signal_mask);
     sigaddset(&signal_mask, SIGVTALRM);
+    //create the swap file;
     FILE *virtual_memory;
     if ((virtual_memory = fopen(FILENAME, "wb+")) == NULL) {
         printf("Fail to creating virtual memory file!\n");
     }
     fclose(virtual_memory);
-//    memory = (char *) malloc(sizeof(char) * PHYSICAL_MEMORY_SIZE);
+    //allocate the physical memory, whose starting address is aligned to a page boundary;
     memory = (char *) memalign(PAGE_SIZE, sizeof(char) * PHYSICAL_MEMORY_SIZE);
+    //initialize page table
     int i = 0;
     for (i = 0; i < NUMBER_OF_PAGES; i++) {
-        page_table[i].page_no = i;
         page_table[i].page_owner = -1;
         page_table[i].position = i;
         page_table[i].next = -1;
-        //是否需要在这里初始化page？
-        //page_initialize(i);
     }
-//    signal(SIGSEGV,)
+//    Register a page fault handler
+    page_fault_sigaction = (struct sigaction *) malloc(sizeof(page_fault_sigaction));
+    page_fault_sigaction->sa_handler = page_fault_handler;
+    sigaction(SIGSEGV, page_fault_sigaction, NULL);
     printf("Memory environment complete! \n");
 }
 
@@ -213,11 +231,9 @@ void initialize() {
  * In other word, they can not be in identical slot
  * @param mode: 0 = kernel memory, 1 = user memory, 2 = shared memory
  * @param thread_id: This parameter is not required in kernel and shared mode
- * @return
+ * @return If new page found, return page number. Otherwise, return -1
  */
 int find_free_pages(int mode, my_pthread_t thread_id) {
-    //kernel mode：遍历kernel区
-    //User mode: 遍历user区
     int page_no;
     if (mode == KERNEL_MODE) {
         for (page_no = 0; page_no < NUMBER_OF_KERNEL_PAGES; page_no++) {
@@ -226,7 +242,17 @@ int find_free_pages(int mode, my_pthread_t thread_id) {
                 return page_no;
             }
         }
-        printf("Error! Can not find a free kernel page! \n");
+        printf("Can not find a free kernel page! \n");
+        return -1;
+    } else if (mode == SHARE_MODE) {
+        for (page_no = NUMBER_OF_KERNEL_PAGES;
+             page_no < NUMBER_OF_KERNEL_PAGES + NUMBER_OF_SHARED_PAGES; page_no++) {
+            if (page_table[page_no].page_owner == -1) {
+                page_table[page_no].page_owner = 1;
+                return page_no;
+            }
+        }
+        printf("Can not find a free shared page! \n");
         return -1;
     } else if (mode == USER_MODE) {
         int base = 0, offset = 0;
@@ -251,104 +277,77 @@ int find_free_pages(int mode, my_pthread_t thread_id) {
         }
         printf("Can not find a free user page!\n");
         return -1;
-    } else if (mode == 2) {
-        for (page_no = 0 + NUMBER_OF_KERNEL_PAGES;
-             page_no < 0 + NUMBER_OF_KERNEL_PAGES + NUMBER_OF_SHARED_PAGES; page_no++) {
-            if (page_table[page_no].page_owner == -1) {
-                page_table[page_no].page_owner = 0;
-                return page_no;
-            }
-        }
-        printf("Error! Can not find a free shared page! \n");
-        return -1;
     }
     return -1;
 }
 
-/**
- * Copy data in memory1 to memory2
- * @param mode "swap": swap data in two areas, "cover": use data in memo1 to cover memo2
- */
-void memory_copy(char *memo1, char *memo2, int size, char *mode) {
-    //mode = "swap" or "cover"
-    //cover: move memo1 to memo2 and cover memo2, memo2 is lost
-    char temp;
-    if (strcmp(mode, "swap") == 0) {
-        int i = 0;
-        for (i = 0; i < size; i++) {
-            temp = memo1[i];
-            memo1[i] = memo2[i];
-            memo2[i] = temp;
-        }
-    } else if (strcmp(mode, "cover") == 0) {
-        int i = 0;
-        for (i = 0; i < size; i++)
-            memo2[i] = memo1[i];
-    }
-}
 
 /**
- * Swap two pages. Page_to_swapin is in the file, while page_to_evict in the physical memory(in the frame)
- * @param page_to_swapin
- * @param page_to_evict
+ * Swap two pages. Page_to_swapin in the file; page_to_evict in the physical memory(in the frame)
+ * @param page_to_swapin: page number of page to swapin
+ * @param page_to_evict: page number of page to evict
  * @return
  */
 int swap_page(int page_to_swapin, int page_to_evict) {
     if (page_table[page_to_swapin].position < NUMBER_OF_FRAMES) {
-        // No need to swap. Already in the frame.
+        // No need to swap. Already in the physical.
         return 1;
     }
     FILE *fp = open_virtual_memory();
+    //Starting address of the frame
     char *address = NULL;
+    //offset: location of the page to swap in. It is in the file now.
     int offset = (page_table[page_to_swapin].position - NUMBER_OF_FRAMES) * PAGE_SIZE;
-//    int temp = page_table[page_to_swapin].position;
-//    page_table[page_to_swapin].position = page_table[page_to_evict].position;
-//    page_table[page_to_evict].position = temp;
-    char *temp_memo = NULL; //temp_memo stores data on the swapped in page
+    //temp_memo stores data on the page to swap in
+    char *temp_memo = NULL;
     if (page_table[page_to_swapin].page_owner != -1) {
         temp_memo = (char *) malloc(sizeof(char) * PAGE_SIZE);
-        if (fseek(fp, offset, SEEK_SET) != 0);
+        if (fseek(fp, offset, SEEK_SET) != 0) {
 //            printf("Fseek fails \n");
+        }
         size_t read_size = fread(temp_memo, sizeof(char), PAGE_SIZE, fp);
-        if (read_size != PAGE_SIZE);
+        if (read_size != PAGE_SIZE) {
 //            printf("Copy page fails \n");
+        }
     }
     if (page_table[page_to_evict].page_owner != -1) {
         address = get_start_address_of_page(page_to_evict);
-        if (fseek(fp, offset, SEEK_SET) != 0) printf("Fseek fails \n");
+        if (fseek(fp, offset, SEEK_SET) != 0) {
+//            printf("Fseek fails \n");
+        }
         size_t write_size = fwrite(address, sizeof(char), PAGE_SIZE, fp);
-        if (write_size != PAGE_SIZE) printf("Evict page fails \n");
+        if (write_size != PAGE_SIZE) {
+//            printf("Evict page fails \n");
+        }
     }
     fclose(fp);
     if (page_table[page_to_swapin].page_owner != -1) {
         memory_copy(temp_memo, address, PAGE_SIZE, "cover");
         free(temp_memo);
     }
+    //update page table entry
     int temp = page_table[page_to_swapin].position;
     page_table[page_to_swapin].position = page_table[page_to_evict].position;
     page_table[page_to_evict].position = temp;
-    // Do we need to initialize page here?
-//    else page_initialize(page_to_swapin);
     return 0;
 }
 
 /**
- * Allocate memory chunk on the page. This function traverse the page, analyze the head integer in node_t.
- * Currently we adopt first-fit strategy and can be further optimized!
- * Splitting: If a chunk is big enough, allocate, then add a new head for the remaining part of the chunk
- * Coalescing: While traversing the page, merge the sequent free chunks. (Not implemented yet)
- * @param size : requested memory size
- * @param page_no : page number
+ * Allocate memory chunk on one page. This function traverse the page, analyze the head integer
+ * in node_t. Currently we adopt first-fit strategy and can be further optimized!
+ * Splitting: If a chunk is big enough, allocate, then update its head, and add a new head for
+ *            the remaining part of the memory chunk
+ * Coalescing: While traversing the page, merge the sequent small free chunks into big one.
+ * @param size: requested memory size
+ * @param page_no: page number
  * @return
  */
 void *allocate_on_page(int size, int page_no) {
-    //在page上根据head数据分配空间
     char *start = &memory[page_no * PAGE_SIZE];
     char *end = &memory[page_no * PAGE_SIZE + PAGE_SIZE - 1];
     node_t *nodePtr = (node_t *) start;
     char *charPtr = start;
     int head = nodePtr->head, length = head >> 1, used = head & 1;
-    // If this is a continuous page for across-pages variable, there will be no head
     if (length == 0) return NULL;
     while (charPtr < end && (used == 1 || length < size)) {
         charPtr += length + sizeof(node_t);
@@ -358,18 +357,27 @@ void *allocate_on_page(int size, int page_no) {
         used = head & 1;
     }
     if (charPtr < end) {
+        //add a new head for the remaining part of the memory chunk
         if (length > size + sizeof(node_t) + 1) {
             node_t *next = (node_t *) (charPtr + size + sizeof(node_t));
             next->head = (length - size - sizeof(node_t)) << 1;
         }
+        // update the head of this allocated memory chunk
         nodePtr->head = (size << 1) + 1;
-        return (void *) (charPtr + sizeof(node_t)); // might have problems?
+        return (void *) (charPtr + sizeof(node_t));
     } else return NULL;
 }
 
+/**
+ * Given a frame number, check if there is one page related to this frame eligible for allocate_across_pages
+ * @param frame_no
+ * @param mode
+ * @param thread_id
+ * @return
+ */
 int eligible_for_across_pages(int frame_no, int mode, my_pthread_t thread_id) {
     int page_no = -1;
-    if (mode == KERNEL_MODE) {
+    if (mode == KERNEL_MODE || mode == SHARE_MODE) {
         if (page_table[frame_no].page_owner == -1) {
             page_no = frame_no;
         }
@@ -390,10 +398,10 @@ int eligible_for_across_pages(int frame_no, int mode, my_pthread_t thread_id) {
 }
 
 /**
- *
- * @param size
+ * Allocate big memory chunk on continuous pages. This is for varaible larger than page size
+ * @param size: requested memory size
  * @param mode: kernel = 0, user = 1, share = 2
- * @param tcb: In kernel mode, this parameter is not used
+ * @param tcb: In kernel or share mode, this parameter is not used
  * @return
  */
 void *allocate_across_pages(int size, int mode, thread_control_block *tcb) {
@@ -458,8 +466,6 @@ void *allocate_across_pages(int size, int mode, thread_control_block *tcb) {
                 swap_page(continuous_pages[j], page_to_evict);
                 page_table[continuous_pages[j]].page_owner = thread_id;
                 page_table[continuous_pages[j]].next = (j < number_of_pages_needed - 1 ? continuous_pages[j + 1] : -1);
-//            Shouldn't initialize page here!
-//            page_initialize(continuous_pages[j]);
             }
             int k = (tcb->memo_block->current_page)++;
             tcb->memo_block->page[k] = continuous_pages[0];
@@ -581,7 +587,8 @@ void mydeallocate(char *p, char *file, int line, int thread_req) {
     }
 }
 
-void memory_manager(thread_control_block *tcb) {
+void memory_manager() {
+    thread_control_block *tcb = get_current_running_thread();
     memory_control_block *memo_block = tcb->memo_block;
     if (memo_block == NULL) return;
     int i = 0;
@@ -595,6 +602,10 @@ void memory_manager(thread_control_block *tcb) {
             page_no = page_table[page_no].next;
         }
     }
+}
+
+void page_fault_handler(int signum, siginfo_t *si, void *unused) {
+    char *addr = si->si_addr;
 }
 
 

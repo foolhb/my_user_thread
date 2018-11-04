@@ -150,7 +150,8 @@ void schedule(int signum) {
     if (current_queue == NULL) return;
     else current_running_thread = pop_thread_from_head(current_queue);
 //    if (current_running_thread->priority != NUMBER_OF_QUEUE_LEVELS - 1) {
-    memory_manager(current_running_thread);
+//    memory_manager(current_running_thread);
+    memory_manager();
     setitimer(ITIMER_VIRTUAL, &time_quantum[current_queue->priority], NULL);
     swapcontext(&(last_running_thread->thread_context), &(current_running_thread->thread_context));
     /***/
