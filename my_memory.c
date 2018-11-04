@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <time.h>
+#include <sys/mman.h>
 
 
 #define THREADREQ 1
@@ -24,8 +25,10 @@
 #define KERNEL_MODE 0
 #define USER_MODE 1
 #define SHARE_MODE 2
-#define FILENAME "virtual_memory_file"
+#define FILENAME "swap_file"
 
+
+void memory_manager(thread_control_block *tcb);
 
 //Pay attention to this: when searching free page,do not allocate kernel page to a thread!
 //Modify anywhere you write like this!
@@ -82,6 +85,33 @@ void *get_start_address_of_page(int page_no) {
     void *p = &memory[frame_no * PAGE_SIZE];
     return p;
 }
+
+/**
+ *
+ * @param page_no
+ * @param prot: forbid = PROT_NONE | PROT_WRITE; allow = PROT_READ
+ * @return
+ */
+int mprotect_a_page(int page_no, int prot) {
+    if (page_table[page_no].position >= NUMBER_OF_FRAMES) return -1;
+    char *addr = get_start_address_of_page(page_no);
+    int res = mprotect(addr, PAGE_SIZE, prot);
+    return res;
+}
+
+/**
+ *
+ * @param prot: forbid = PROT_NONE | PROT_WRITE; allow = PROT_READ
+ * @return
+ */
+int mprotect_all_pages(int prot) {
+    char *addr = memory;
+    addr += (NUMBER_OF_KERNEL_PAGES + NUMBER_OF_SHARED_PAGES) * PAGE_SIZE;
+    size_t len = (NUMBER_OF_FRAMES - NUMBER_OF_KERNEL_PAGES - NUMBER_OF_SHARED_PAGES) * PAGE_SIZE;
+    int res = mprotect(addr, len, prot);
+    return res;
+}
+
 
 /**
  * Given a pointer, get the page which it lies in
@@ -158,7 +188,7 @@ void initialize() {
     sigemptyset(&signal_mask);
     sigaddset(&signal_mask, SIGVTALRM);
     FILE *virtual_memory;
-    if ((virtual_memory = fopen("virtual_memory", "wb+")) == NULL) {
+    if ((virtual_memory = fopen(FILENAME, "wb+")) == NULL) {
         printf("Fail to creating virtual memory file!\n");
     }
     fclose(virtual_memory);
@@ -173,6 +203,7 @@ void initialize() {
         //是否需要在这里初始化page？
         //page_initialize(i);
     }
+//    signal(SIGSEGV,)
     printf("Memory environment complete! \n");
 }
 
@@ -497,6 +528,7 @@ void *myallocate(int size, char *file, int line, int thread_req) {
                     printf("This thread is using too many pages! \n");
                 } else {
                     int new_page = find_free_pages(USER_MODE, current_thread->thread_id);
+                    mprotect_a_page(new_page, PROT_READ | PROT_WRITE);
                     if (new_page != -1) {
                         memo_block->page[i] = new_page;
                         (memo_block->current_page)++;
@@ -553,10 +585,12 @@ void memory_manager(thread_control_block *tcb) {
     memory_control_block *memo_block = tcb->memo_block;
     if (memo_block == NULL) return;
     int i = 0;
+    mprotect_all_pages(PROT_NONE);
     for (i = 0; i < memo_block->current_page; i++) {
         int page_no = memo_block->page[i];
         while (page_no != -1) {
             int page_to_evict = find_page_to_evict(page_no);
+            mprotect_a_page(page_to_evict, PROT_WRITE | PROT_READ);
             swap_page(page_no, page_to_evict);
             page_no = page_table[page_no].next;
         }
