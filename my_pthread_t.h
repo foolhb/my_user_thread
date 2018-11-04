@@ -31,7 +31,8 @@ typedef enum thread_states {
 typedef long int my_pthread_t;
 
 typedef struct _memory_block {
-    int* page;
+//    int* page;
+    int page[110];
     int current_page;
 } memory_control_block;
 
@@ -104,8 +105,7 @@ int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex);
 /* destroy the mutex */
 int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex);
 
-thread_control_block* get_current_running_thread();
-
+thread_control_block *get_current_running_thread();
 
 
 #define USE_MY_PTHREAD 1 (comment it if you want to use pthread)

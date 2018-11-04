@@ -261,6 +261,7 @@ int environment_initialize() {
  * @param attr: This parameter is ignored according to the assignment!
  */
 int my_pthread_create(my_pthread_t *thread, pthread_attr_t *attr, void *(*function)(void *), void *arg) {
+    sigprocmask(SIG_SETMASK, &signal_mask, NULL);
     if (initialized == 0) {
         environment_initialize();
         initialized = 1;

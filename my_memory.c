@@ -4,25 +4,21 @@
 
 #include "my_memory_t.h"
 #include "my_pthread_t.h"
-//#include "test_stub.h"
 #include <malloc.h>
 #include <math.h>
 #include <string.h>
 #include <signal.h>
 #include <unistd.h>
-#include <sys/syscall.h>
-#include <sys/types.h>
-#include <sys/time.h>
 #include <time.h>
 
-//#define malloc(x) myallocate(x, __FILE__, __LINE__, THREADREQ)
+
 #define THREADREQ 1
 #define PHYSICAL_MEMORY_SIZE (8*1024*1024)
 #define VIRTUAL_MEMORY_SIZE (3*8*1024*1024)
 #define PAGE_SIZE (4*1024)
 #define NUMBER_OF_PAGES (VIRTUAL_MEMORY_SIZE/PAGE_SIZE)
 #define NUMBER_OF_FRAMES (PHYSICAL_MEMORY_SIZE/PAGE_SIZE)
-#define MAX_PAGE_NUMBER_OF_A_THREAD 1160
+#define MAX_PAGE_NUMBER_OF_A_THREAD 110
 #define NUMBER_OF_KERNEL_PAGES 100
 #define NUMBER_OF_SHARED_PAGES 4
 #define KERNEL_MODE 0
@@ -140,7 +136,7 @@ void page_initialize(int page_no) {
  * @return an open file handler
  */
 FILE *open_virtual_memory() {
-    FILE *fp = fopen(FILENAME, "wb");
+    FILE *fp = fopen(FILENAME, "rb+");
     return fp;
 }
 
@@ -162,11 +158,12 @@ void initialize() {
     sigemptyset(&signal_mask);
     sigaddset(&signal_mask, SIGVTALRM);
     FILE *virtual_memory;
-    if ((virtual_memory = fopen("virtual_memory", "wb")) == NULL) {
+    if ((virtual_memory = fopen("virtual_memory", "wb+")) == NULL) {
         printf("Fail to creating virtual memory file!\n");
     }
     fclose(virtual_memory);
-    memory = (char *) malloc(sizeof(char) * PHYSICAL_MEMORY_SIZE);
+//    memory = (char *) malloc(sizeof(char) * PHYSICAL_MEMORY_SIZE);
+    memory = (char *) memalign(PAGE_SIZE, sizeof(char) * PHYSICAL_MEMORY_SIZE);
     int i = 0;
     for (i = 0; i < NUMBER_OF_PAGES; i++) {
         page_table[i].page_no = i;
@@ -266,11 +263,9 @@ void memory_copy(char *memo1, char *memo2, int size, char *mode) {
  * @return
  */
 int swap_page(int page_to_swapin, int page_to_evict) {
-    //根据page number 找到page_to_evict所在的frame，以及page_to_swapin在文件中的offset
-    //update position,交换两者
     if (page_table[page_to_swapin].position < NUMBER_OF_FRAMES) {
-//        printf("No need to swap. This page already in physical memory\n");
-        return 1; // No need to swap. Already in the frame.
+        // No need to swap. Already in the frame.
+        return 1;
     }
     FILE *fp = open_virtual_memory();
     char *address = NULL;
@@ -336,7 +331,7 @@ void *allocate_on_page(int size, int page_no) {
             node_t *next = (node_t *) (charPtr + size + sizeof(node_t));
             next->head = (length - size - sizeof(node_t)) << 1;
         }
-        nodePtr->head += 1;
+        nodePtr->head = (size << 1) + 1;
         return (void *) (charPtr + sizeof(node_t)); // might have problems?
     } else return NULL;
 }
@@ -407,6 +402,12 @@ void *allocate_across_pages(int size, int mode, thread_control_block *tcb) {
         pthread_t thread_id = tcb->thread_id;
         if (number_of_pages_needed > NUMBER_OF_FRAMES - NUMBER_OF_SHARED_PAGES - NUMBER_OF_KERNEL_PAGES) {
             printf("This variable is even larger than user physical memory\n");
+            free(continuous_pages);
+            return NULL;
+        }
+        if (tcb->memo_block->current_page == MAX_PAGE_NUMBER_OF_A_THREAD) {
+            printf("This thread already owns too much pages!\n");
+            free(continuous_pages);
             return NULL;
         }
         int frame_no = 0 + NUMBER_OF_KERNEL_PAGES + NUMBER_OF_SHARED_PAGES, i = 0;
@@ -419,20 +420,17 @@ void *allocate_across_pages(int size, int mode, thread_control_block *tcb) {
             }
             frame_no++;
         }
-        if (i != number_of_pages_needed) return NULL;
-        int j = 0;
-        for (j = 0; j < number_of_pages_needed; j++) {
-            int page_to_evict = find_page_to_evict(continuous_pages[j]);
-            swap_page(continuous_pages[j], page_to_evict);
-            page_table[continuous_pages[j]].page_owner = thread_id;
-            page_table[continuous_pages[j]].next = (j < number_of_pages_needed - 1 ? continuous_pages[j + 1] : -1);
+        if (i == number_of_pages_needed) {
+            int j = 0;
+            for (j = 0; j < number_of_pages_needed; j++) {
+                int page_to_evict = find_page_to_evict(continuous_pages[j]);
+                swap_page(continuous_pages[j], page_to_evict);
+                page_table[continuous_pages[j]].page_owner = thread_id;
+                page_table[continuous_pages[j]].next = (j < number_of_pages_needed - 1 ? continuous_pages[j + 1] : -1);
 //            Shouldn't initialize page here!
 //            page_initialize(continuous_pages[j]);
-        }
-        if (tcb->memo_block->current_page == MAX_PAGE_NUMBER_OF_A_THREAD) {
-            printf("This thread already owns too much pages!\n");
-        } else {
-            int k = ++(tcb->memo_block->current_page);
+            }
+            int k = (tcb->memo_block->current_page)++;
             tcb->memo_block->page[k] = continuous_pages[0];
             pointer = get_start_address_of_page(continuous_pages[0]);
         }
@@ -451,17 +449,18 @@ void *allocate_across_pages(int size, int mode, thread_control_block *tcb) {
  * @return
  */
 void *myallocate(int size, char *file, int line, int thread_req) {
+    sigprocmask(SIG_SETMASK, &signal_mask, NULL);
     if (initialized == 0) {
         initialize();
     }
-    sigprocmask(SIG_SETMASK, &signal_mask, NULL);
+//    sigprocmask(SIG_SETMASK, &signal_mask, NULL);
     void *pointer = NULL;
     if (thread_req == USER_MODE) {
         thread_control_block *current_thread = get_current_running_thread();
         //If it's a new TCB, initialize its memory control block.
         if (current_thread->memo_block == NULL) {
             current_thread->memo_block = (memory_control_block *) malloc(sizeof(memory_control_block));
-            current_thread->memo_block->page = (int *) malloc(sizeof(int) * MAX_PAGE_NUMBER_OF_A_THREAD);
+//            current_thread->memo_block->page = (int *) malloc(sizeof(int) * MAX_PAGE_NUMBER_OF_A_THREAD);
             current_thread->memo_block->current_page = 0;
             int i = 0;
             for (i = 0; i < MAX_PAGE_NUMBER_OF_A_THREAD; i++) {
@@ -477,15 +476,19 @@ void *myallocate(int size, char *file, int line, int thread_req) {
             memory_control_block *memo_block = current_thread->memo_block;
             //First try to allocate space on the pages the thread already owns
             int i = 0;
-            for (; memo_block->page[i] != -1 && i < MAX_PAGE_NUMBER_OF_A_THREAD; i++) {
+//            for (; memo_block->page[i] != -1 && i < MAX_PAGE_NUMBER_OF_A_THREAD; i++) {
+            for (; i < memo_block->current_page; i++) {
                 //Swap in this page first if it is not in the memory
                 int page_no = memo_block->page[i];
+                if (page_table[page_no].next != -1) continue;
                 if (page_table[page_no].position >= NUMBER_OF_FRAMES) {
                     int page_to_evict = find_page_to_evict(page_no);
                     swap_page(memo_block->page[i], page_to_evict);
                 }
                 pointer = allocate_on_page(size, page_no);
-                if (pointer != NULL) break;
+                if (pointer != NULL) {
+                    break;
+                }
             }
             //If al currently owned pages are full, assign a new page.
             //A new page definitely has enough space
@@ -494,11 +497,14 @@ void *myallocate(int size, char *file, int line, int thread_req) {
                     printf("This thread is using too many pages! \n");
                 } else {
                     int new_page = find_free_pages(USER_MODE, current_thread->thread_id);
-                    memo_block->page[i] = new_page;
-                    int page_to_evict = find_page_to_evict(new_page);
-                    swap_page(memo_block->page[i], page_to_evict);
-                    page_initialize(new_page);
-                    pointer = allocate_on_page(size, new_page);
+                    if (new_page != -1) {
+                        memo_block->page[i] = new_page;
+                        (memo_block->current_page)++;
+                        int page_to_evict = find_page_to_evict(new_page);
+                        swap_page(memo_block->page[i], page_to_evict);
+                        page_initialize(new_page);
+                        pointer = allocate_on_page(size, new_page);
+                    }
                 }
             }
         }
@@ -547,9 +553,13 @@ void memory_manager(thread_control_block *tcb) {
     memory_control_block *memo_block = tcb->memo_block;
     if (memo_block == NULL) return;
     int i = 0;
-    for (i = 0; memo_block->page[i] != -1 && i < MAX_PAGE_NUMBER_OF_A_THREAD; i++) {
-        int page_to_evict = find_page_to_evict(memo_block->page[i]);
-        swap_page(memo_block->page[i], page_to_evict);
+    for (i = 0; i < memo_block->current_page; i++) {
+        int page_no = memo_block->page[i];
+        while (page_no != -1) {
+            int page_to_evict = find_page_to_evict(page_no);
+            swap_page(page_no, page_to_evict);
+            page_no = page_table[page_no].next;
+        }
     }
 }
 
