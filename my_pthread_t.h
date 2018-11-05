@@ -31,8 +31,8 @@ typedef enum thread_states {
 typedef int my_pthread_t;
 
 typedef struct _memory_block {
-//    int* page;
-    int page[110];
+    int* page;
+//    int page[110];
     int current_page;
 } memory_control_block;
 

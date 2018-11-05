@@ -7,11 +7,19 @@
 
 #include <pthread.h>
 
-#include "../my_pthread_t.h"
+#include "my_pthread_t.h"
+#include "my_memory_t.h"
 
 #define DEFAULT_THREAD_NUM 2
 
 #define VECTOR_SIZE 3000000
+
+
+#define THREADREQ 1
+#define malloc(x) myallocate(x, __FILE__, __LINE__, THREADREQ)
+#define free(x) mydeallocate(x, __FILE__, __LINE__, THREADREQ)
+
+
 
 pthread_mutex_t   mutex;
 

@@ -15,13 +15,13 @@
 #define malloc(x) myallocate(x, __FILE__, __LINE__, THREADREQ)
 #define free(x) mydeallocate(x, __FILE__, __LINE__, THREADREQ)
 
-#define DEFAULT_THREAD_NUM 4
+#define DEFAULT_THREAD_NUM 20
 
 //#define C_SIZE 1000
 //#define R_SIZE 10
 
-#define C_SIZE 100
-#define R_SIZE 10
+#define C_SIZE 10000
+#define R_SIZE 100
 
 pthread_mutex_t mutex;
 

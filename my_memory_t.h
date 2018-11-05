@@ -14,7 +14,9 @@ void memory_manager();
 
 void mydeallocate(char *p, char *file, int line, int thread_req);
 
-void *myallocate(int size, char *file, int line, int thread_req);
+void *myallocate(size_t size, char *file, int line, int thread_req);
+
+void *shalloc(size_t size);
 
 
 

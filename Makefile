@@ -1,17 +1,4 @@
-CC = gcc
-CFLAGS = -g -c
-AR = ar -rc
-RANLIB = ranlib
-
-
-Target: my_pthread.a
-
-my_pthread.a: my_pthread.o
-	$(AR) libmy_pthread.a my_pthread.o
-	$(RANLIB) libmy_pthread.a
-
-my_pthread.o: my_pthread_t.h
-	$(CC) -pthread $(CFLAGS) my_pthread.c
-
-clean:
-	rm -rf testfile *.o *.a
+test1:
+	gcc my_memory.c my_memory_t.h my_pthread.c my_pthread_t.h test1.c -o test1.out
+	gcc my_memory.c my_memory_t.h my_pthread.c my_pthread_t.h parallelCal.c -o parallelCal
+	gcc my_memory.c my_memory_t.h my_pthread.c my_pthread_t.h vectorMultiply.c -o vectorMultiply
